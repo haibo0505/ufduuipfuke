@@ -253,6 +253,57 @@ App({
 `
   });
 
+  // 5b. utils/config.js (Unified backend API address configuration)
+  const rawApiBaseUrl = (meta.apiBaseUrl || 'https://YOUR_API_DOMAIN').trim().replace(/\/+$/, '');
+  const configuredApiBaseUrl = rawApiBaseUrl || 'https://YOUR_API_DOMAIN';
+
+  files.push({
+    path: 'utils/config.js',
+    name: 'config.js',
+    type: 'js',
+    description: '统一后端 API 服务地址配置文件，供所有 wx.request、wx.uploadFile、wx.downloadFile 调用',
+    content: `// utils/config.js - 统一后端 API 地址配置
+// 请将下方地址替换为你实际部署的后端公网 HTTPS 域名（或局域网调试地址如 http://192.168.1.x:3000）
+const API_BASE_URL = '${configuredApiBaseUrl}';
+
+/**
+ * 获取去除末尾斜杠的规范化 API_BASE_URL
+ */
+function getApiBaseUrl() {
+  return (API_BASE_URL || '').trim().replace(/\\/+$/, '');
+}
+
+/**
+ * 检查是否已配置真实后端地址（非默认占位符 YOUR_API_DOMAIN）
+ */
+function isApiConfigured() {
+  const url = getApiBaseUrl();
+  if (!url) return false;
+  if (url === 'https://YOUR_API_DOMAIN' || url.indexOf('YOUR_API_DOMAIN') !== -1) {
+    return false;
+  }
+  return /^https?:\\/\\//i.test(url);
+}
+
+/**
+ * 统一拼接完整后端接口地址
+ * @param {string} apiPath 如 '/api/parse'、'/api/jobs/upload'
+ */
+function buildApiUrl(apiPath) {
+  const base = getApiBaseUrl();
+  const cleanPath = String(apiPath || '').startsWith('/') ? apiPath : '/' + apiPath;
+  return base + cleanPath;
+}
+
+module.exports = {
+  API_BASE_URL,
+  getApiBaseUrl,
+  isApiConfigured,
+  buildApiUrl
+};
+`
+  });
+
   // 6. Generate Page Files
   template.pages.forEach((page) => {
     // page.json
@@ -314,6 +365,12 @@ function generatePageWxml(templateId: string, pageId: string, meta: MiniProgramM
     <text class="hero-desc">支持复制抖音、B站、TikTok、小红书、快手链接一键去水印保存相册，或转为 H.264 灰度相对深度 MP4</text>
   </view>
 
+  <!-- 后端 API_BASE_URL 未配置提醒卡片 -->
+  <view class="card api-warning-card" wx:if="{{!apiConfigured}}">
+    <text class="api-warning-title">⚠️ 尚未配置后端 API 服务地址</text>
+    <text class="api-warning-desc">当前 utils/config.js 中的 API_BASE_URL 仍为占位符 ({{apiBaseUrl}})。请先部署后端服务，并在 utils/config.js 中填写你的公网 HTTPS 域名或局域网调试地址。</text>
+  </view>
+
   <!-- 方式 A：复制抖音/全网链接一键去水印 -->
   <view class="card input-card">
     <view class="section-header flex-between">
@@ -358,6 +415,7 @@ function generatePageWxml(templateId: string, pageId: string, meta: MiniProgramM
       <view class="config-item">✓ 去水印：Evil0ctal/Douyin_TikTok_Download_API (ABogus + Websign)</view>
       <view class="config-item">✓ 深度模型：Depth Anything V2 Small (全片统一 1st~99th 分位数归一化)</view>
       <view class="config-item">✓ 产物：无水印原画 MP4 & H.264 灰度深度 MP4 (近亮远暗)</view>
+      <view class="config-item">✓ 后端地址：{{apiBaseUrl}}</view>
     </view>
   </view>
 </view>`;
@@ -688,6 +746,26 @@ function generatePageWxss(templateId: string, pageId: string, meta: MiniProgramM
   display: block;
   font-size: 24rpx;
   opacity: 0.9;
+  line-height: 1.5;
+}
+
+.api-warning-card {
+  background: #FFFBEB;
+  border: 2rpx solid #FDE68A;
+}
+
+.api-warning-title {
+  display: block;
+  font-size: 26rpx;
+  font-weight: bold;
+  color: #B45309;
+  margin-bottom: 6rpx;
+}
+
+.api-warning-desc {
+  display: block;
+  font-size: 22rpx;
+  color: #92400E;
   line-height: 1.5;
 }
 
@@ -1057,11 +1135,12 @@ function generatePageJs(templateId: string, pageId: string, meta: MiniProgramMet
     if (pageId === 'index') {
       return `// pages/index/index.js - 抖音/全网去水印下载与深度视频转换
 const app = getApp();
-// 默认指向后端 API 服务地址 (部署时请在微信公众平台配置合法 request / uploadFile / downloadFile 域名)
-const SERVER_URL = 'http://localhost:3000';
+const { API_BASE_URL, isApiConfigured, buildApiUrl } = require('../../utils/config.js');
 
 Page({
   data: {
+    apiBaseUrl: API_BASE_URL,
+    apiConfigured: isApiConfigured(),
     douyinText: '',
     parsing: false,
     submitting: false,
@@ -1070,13 +1149,40 @@ Page({
   },
 
   onLoad() {
+    if (!isApiConfigured()) {
+      this.setData({
+        apiConfigured: false,
+        douyinError: '请先在 utils/config.js 中配置真实的后端 API_BASE_URL 地址（不能使用未部署的占位域名）'
+      });
+      return;
+    }
+
     wx.request({
-      url: SERVER_URL + '/api/health',
+      url: buildApiUrl('/api/health'),
       method: 'GET',
       success: (res) => {
         console.log('后端引擎状态:', res.data);
+      },
+      fail: () => {
+        this.setData({
+          douyinError: '无法连接后端服务 (' + API_BASE_URL + ')，请确认后端已启动且网络可达'
+        });
       }
     });
+  },
+
+  ensureBackendConfigured() {
+    if (!isApiConfigured()) {
+      const msg = '尚未配置真实后端地址，请打开 utils/config.js 将 API_BASE_URL 修改为你的后端服务地址后再试。';
+      this.setData({ douyinError: msg });
+      wx.showModal({
+        title: '请先配置后端 API 地址',
+        content: msg,
+        showCancel: false
+      });
+      return false;
+    }
+    return true;
   },
 
   onInputDouyinText(e) {
@@ -1102,6 +1208,8 @@ Page({
 
   // 方式 A1：一键去水印解析原视频 (Evil0ctal ABogus + Websign)
   handleParseCleanVideo() {
+    if (!this.ensureBackendConfigured()) return;
+
     const text = this.data.douyinText.trim();
     if (!text) {
       wx.showToast({ title: '请先粘贴抖音或视频链接', icon: 'none' });
@@ -1112,7 +1220,7 @@ Page({
     wx.showLoading({ title: '正在去水印解析...' });
 
     wx.request({
-      url: SERVER_URL + '/api/parse',
+      url: buildApiUrl('/api/parse'),
       method: 'POST',
       header: { 'content-type': 'application/json' },
       data: { shareText: text },
@@ -1121,8 +1229,11 @@ Page({
         this.setData({ parsing: false });
         if (res.data && res.data.success && res.data.data) {
           const info = res.data.data;
-          info.playUrl = SERVER_URL + info.proxyPlayUrl;
-          info.downloadUrl = SERVER_URL + info.proxyDownloadUrl;
+          info.playUrl = buildApiUrl(info.proxyPlayUrl || ('/api/proxy-video?url=' + encodeURIComponent(info.videoUrl || '')));
+          info.downloadUrl = buildApiUrl(info.proxyDownloadUrl || ('/api/proxy-video?download=1&url=' + encodeURIComponent(info.videoUrl || '')));
+          if (info.proxyCoverUrl) {
+            info.coverUrl = buildApiUrl(info.proxyCoverUrl);
+          }
           this.setData({ parsedVideo: info });
           wx.showToast({ title: '去水印解析成功', icon: 'success' });
         } else {
@@ -1135,7 +1246,7 @@ Page({
         wx.hideLoading();
         this.setData({
           parsing: false,
-          douyinError: '无法连接后端去水印服务'
+          douyinError: '无法连接后端去水印服务 (' + API_BASE_URL + ')，请检查 utils/config.js 配置及后端运行状态'
         });
       }
     });
@@ -1143,6 +1254,7 @@ Page({
 
   // 保存去水印后的原画 MP4 到手机相册
   saveCleanVideoToAlbum() {
+    if (!this.ensureBackendConfigured()) return;
     if (!this.data.parsedVideo || !this.data.parsedVideo.downloadUrl) return;
     wx.showLoading({ title: '正在下载无水印视频...' });
     wx.downloadFile({
@@ -1163,13 +1275,15 @@ Page({
       },
       fail: () => {
         wx.hideLoading();
-        wx.showToast({ title: '下载失败', icon: 'none' });
+        wx.showToast({ title: '下载失败，请检查后端连接', icon: 'none' });
       }
     });
   },
 
   // 方式 A2：提交抖音链接转为灰度深度视频
   handleParseDouyin() {
+    if (!this.ensureBackendConfigured()) return;
+
     const text = this.data.douyinText.trim();
     if (!text) {
       wx.showToast({ title: '请先粘贴抖音链接', icon: 'none' });
@@ -1180,7 +1294,7 @@ Page({
     wx.showLoading({ title: '正在创建解析任务...' });
 
     wx.request({
-      url: SERVER_URL + '/api/jobs/douyin',
+      url: buildApiUrl('/api/jobs/douyin'),
       method: 'POST',
       header: { 'content-type': 'application/json' },
       data: { shareText: text, url: text },
@@ -1207,7 +1321,7 @@ Page({
         wx.hideLoading();
         this.setData({
           submitting: false,
-          douyinError: '无法连接后端服务，请确认服务已启动且已配置微信合法域名'
+          douyinError: '无法连接后端服务 (' + API_BASE_URL + ')，请确认服务已启动且已在 utils/config.js 配置正确地址'
         });
       }
     });
@@ -1215,6 +1329,8 @@ Page({
 
   // 方式 B：上传本地相册/文件视频
   chooseLocalVideo() {
+    if (!this.ensureBackendConfigured()) return;
+
     wx.chooseMedia({
       count: 1,
       mediaType: ['video'],
@@ -1226,7 +1342,7 @@ Page({
 
         wx.showLoading({ title: '正在上传视频文件...' });
         wx.uploadFile({
-          url: SERVER_URL + '/api/jobs/upload',
+          url: buildApiUrl('/api/jobs/upload'),
           filePath: file.tempFilePath,
           name: 'video',
           success: (uploadRes) => {
@@ -1258,7 +1374,7 @@ Page({
             wx.hideLoading();
             wx.showModal({
               title: '上传失败',
-              content: '网络错误或文件超出限制，请检查后端状态',
+              content: '无法连接后端上传接口 (' + API_BASE_URL + ')，请检查后端状态与 utils/config.js 配置',
               showCancel: false
             });
           }
@@ -1272,7 +1388,7 @@ Page({
 
     if (pageId === 'process') {
       return `// pages/process/process.js - 实时轮询真实任务进度
-const SERVER_URL = 'http://localhost:3000';
+const { API_BASE_URL, isApiConfigured, buildApiUrl } = require('../../utils/config.js');
 
 Page({
   data: {
@@ -1288,6 +1404,15 @@ Page({
   },
 
   onLoad(options) {
+    if (!isApiConfigured()) {
+      this.setData({
+        status: 'failed',
+        stageText: '未配置后端 API 地址',
+        jobError: '请先在 utils/config.js 中配置真实的后端 API_BASE_URL 地址（当前为 ' + API_BASE_URL + '）'
+      });
+      return;
+    }
+
     const jobId = (options && options.jobId) || wx.getStorageSync('active_depth_job_id');
     if (jobId) {
       this.setData({ jobId: jobId });
@@ -1302,10 +1427,10 @@ Page({
   },
 
   pollJobStatus() {
-    if (!this.data.jobId) return;
+    if (!this.data.jobId || !isApiConfigured()) return;
 
     wx.request({
-      url: SERVER_URL + '/api/jobs/' + this.data.jobId,
+      url: buildApiUrl('/api/jobs/' + this.data.jobId),
       method: 'GET',
       success: (res) => {
         if (res.data && res.data.success && res.data.job) {
@@ -1367,7 +1492,7 @@ Page({
 
     if (pageId === 'player') {
       return `// pages/player/player.js - 灰度深度 MP4 预览与下载
-const SERVER_URL = 'http://localhost:3000';
+const { API_BASE_URL, isApiConfigured, buildApiUrl } = require('../../utils/config.js');
 
 Page({
   data: {
@@ -1378,6 +1503,15 @@ Page({
   },
 
   onLoad(options) {
+    if (!isApiConfigured()) {
+      wx.showModal({
+        title: '请先配置后端 API 地址',
+        content: '请在 utils/config.js 中配置真实的 API_BASE_URL（当前为 ' + API_BASE_URL + '）',
+        showCancel: false
+      });
+      return;
+    }
+
     const jobId = (options && options.jobId) || wx.getStorageSync('active_depth_job_id');
     if (jobId) {
       this.updateVideoJob(jobId);
@@ -1385,6 +1519,7 @@ Page({
   },
 
   onShow() {
+    if (!isApiConfigured()) return;
     const jobId = wx.getStorageSync('active_depth_job_id');
     if (jobId && jobId !== this.data.jobId) {
       this.updateVideoJob(jobId);
@@ -1392,7 +1527,7 @@ Page({
   },
 
   updateVideoJob(jobId) {
-    const url = SERVER_URL + '/api/jobs/' + jobId + '/depth-video';
+    const url = buildApiUrl('/api/jobs/' + jobId + '/depth-video');
     this.setData({
       jobId: jobId,
       depthVideoUrl: url,
@@ -1402,6 +1537,15 @@ Page({
 
   // 保存深度 MP4 到手机相册
   saveToAlbum() {
+    if (!isApiConfigured()) {
+      wx.showModal({
+        title: '尚未配置后端地址',
+        content: '请先在 utils/config.js 中填写已部署的后端 API_BASE_URL',
+        showCancel: false
+      });
+      return;
+    }
+
     if (!this.data.jobId) {
       wx.showToast({ title: '请先生成一个深度视频任务', icon: 'none' });
       return;
@@ -1410,7 +1554,7 @@ Page({
     this.setData({ downloading: true });
     wx.showLoading({ title: '正在下载视频...' });
 
-    const downloadUrl = SERVER_URL + '/api/jobs/' + this.data.jobId + '/download';
+    const downloadUrl = buildApiUrl('/api/jobs/' + this.data.jobId + '/download');
 
     wx.downloadFile({
       url: downloadUrl,
@@ -1438,14 +1582,14 @@ Page({
       fail: () => {
         wx.hideLoading();
         this.setData({ downloading: false });
-        wx.showToast({ title: '网络连接失败', icon: 'none' });
+        wx.showToast({ title: '网络连接失败 (' + API_BASE_URL + ')', icon: 'none' });
       }
     });
   },
 
   copyDownloadUrl() {
-    if (!this.data.jobId) return;
-    const downloadUrl = SERVER_URL + '/api/jobs/' + this.data.jobId + '/download';
+    if (!this.data.jobId || !isApiConfigured()) return;
+    const downloadUrl = buildApiUrl('/api/jobs/' + this.data.jobId + '/download');
     wx.setClipboardData({
       data: downloadUrl,
       success: () => {

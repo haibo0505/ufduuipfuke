@@ -93,6 +93,28 @@ export const ProjectConfigPanel: React.FC<ConfigPanelProps> = ({
             />
           </div>
         </div>
+
+        {/* Unified Backend API_BASE_URL Configuration */}
+        <div className="p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl space-y-1.5">
+          <div className="flex items-center justify-between">
+            <label className="block text-indigo-950 font-bold text-[11px]">
+              后端 API 服务地址 (写入 utils/config.js)
+            </label>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700">
+              API_BASE_URL
+            </span>
+          </div>
+          <input
+            type="text"
+            value={meta.apiBaseUrl ?? 'https://YOUR_API_DOMAIN'}
+            onChange={(e) => onMetaChange({ ...meta, apiBaseUrl: e.target.value })}
+            className="w-full px-2.5 py-1.5 bg-white border border-indigo-200 rounded-lg font-mono text-[11px] text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+            placeholder="https://YOUR_API_DOMAIN 或 http://192.168.1.x:3000"
+          />
+          <p className="text-[10px] text-indigo-800/90 leading-relaxed">
+            导出小程序源码时自动写入 <code className="font-mono font-bold">utils/config.js</code>。不能填 AI Studio 的 localhost；请填写你部署后的公网 HTTPS 域名或电脑局域网 IP。
+          </p>
+        </div>
       </div>
 
       {/* Theme Color Picker */}

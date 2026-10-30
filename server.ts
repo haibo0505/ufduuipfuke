@@ -100,15 +100,23 @@ async function startServer() {
       ffmpegReady = false;
     }
 
+    const customCacheDir = process.env.DEPTH_CACHE_DIR || path.resolve(process.cwd(), 'backend/.model_cache');
     const possibleModelPaths = [
-      path.join(os.homedir(), '.cache', 'depth-video'),
-      '/root/.cache/depth-video'
+      path.join(customCacheDir, 'checkpoints', 'depth_anything_v2_vits.pth'),
+      path.join(os.homedir(), '.cache', 'depth-video', 'checkpoints', 'depth_anything_v2_vits.pth'),
+      '/root/.cache/depth-video/checkpoints/depth_anything_v2_vits.pth'
     ];
     let modelReady = false;
     for (const p of possibleModelPaths) {
       if (fs.existsSync(p)) {
-        modelReady = true;
-        break;
+        try {
+          if (fs.statSync(p).size > 90_000_000) {
+            modelReady = true;
+            break;
+          }
+        } catch {
+          // ignore
+        }
       }
     }
 
@@ -118,7 +126,8 @@ async function startServer() {
 
     res.json({
       success: true,
-      service: 'Douyin Watermark-Free & Depth Video Backend',
+      service: 'depth-video-backend',
+      status: 'running',
       engine: 'Evil0ctal/Douyin_TikTok_Download_API (ABogus+Websign) + Depth Anything V2 Small',
       pythonReady,
       pythonVersion: pythonVer,
@@ -400,8 +409,9 @@ async function startServer() {
   }
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-  app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+  const host = process.env.HOST || '0.0.0.0';
+  app.listen(port, host, () => {
+    console.log(`Server running at http://${host}:${port}`);
     warmUpDepthEnvironment();
   });
 }

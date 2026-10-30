@@ -57,7 +57,8 @@ export default function App() {
     themeColor: currentTemplate.themeColor,
     themeBg: '#F7F8FA',
     author: 'AI Studio',
-    description: currentTemplate.description
+    description: currentTemplate.description,
+    apiBaseUrl: 'https://YOUR_API_DOMAIN'
   });
 
   // Switch template handler
@@ -65,15 +66,16 @@ export default function App() {
     const nextTemplate = TEMPLATES.find((t) => t.id === id) || TEMPLATES[0];
     setSelectedTemplateId(id);
     setActivePageId(nextTemplate.pages[0].id);
-    setMeta({
+    setMeta((prev) => ({
       appName: nextTemplate.name,
       appId: nextTemplate.defaultAppId,
       version: '1.0.0',
       themeColor: nextTemplate.themeColor,
       themeBg: '#F7F8FA',
       author: 'AI Studio',
-      description: nextTemplate.description
-    });
+      description: nextTemplate.description,
+      apiBaseUrl: prev.apiBaseUrl || 'https://YOUR_API_DOMAIN'
+    }));
     showToast(`已切换至模版：${nextTemplate.name}`);
   };
 
@@ -251,10 +253,22 @@ export default function App() {
             </p>
           </div>
 
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-shrink-0 bg-slate-900/60 border border-indigo-400/30 p-3 rounded-2xl">
+            <div className="space-y-1">
+              <label className="block text-[11px] font-semibold text-indigo-200">
+                小程序后端 API_BASE_URL (导出写入 utils/config.js)：
+              </label>
+              <input
+                type="text"
+                value={meta.apiBaseUrl ?? 'https://YOUR_API_DOMAIN'}
+                onChange={(e) => setMeta({ ...meta, apiBaseUrl: e.target.value })}
+                placeholder="https://YOUR_API_DOMAIN"
+                className="w-full sm:w-64 px-2.5 py-1.5 rounded-lg bg-slate-950/90 border border-indigo-400/40 text-xs font-mono text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+            </div>
             <button
               onClick={handleExportZip}
-              className="px-4 py-2 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl text-xs shadow transition flex items-center gap-1.5"
+              className="px-4 py-2.5 bg-indigo-500 hover:bg-indigo-400 text-white font-bold rounded-xl text-xs shadow transition flex items-center justify-center gap-1.5 self-end sm:self-center"
             >
               <Download className="w-3.5 h-3.5" />
               <span>下载小程序工程包</span>

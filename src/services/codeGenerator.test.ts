@@ -225,7 +225,7 @@ test('5. ZIP extraction verification: miniprogramRoot points to a valid existing
     assert.equal(allProjectConfigs[0], path.join(extractDir, 'project.config.json'));
     assert.equal(allAppJsons[0], path.join(extractDir, 'app.json'));
 
-    // Verify top-level entries of extractDir are only the expected files + pages/ folder
+    // Verify top-level entries of extractDir are only the expected files + pages/ + utils/ folders
     const topLevelEntries = fs.readdirSync(extractDir).sort();
     assert.deepEqual(
       topLevelEntries,
@@ -237,8 +237,14 @@ test('5. ZIP extraction verification: miniprogramRoot points to a valid existing
         'pages',
         'project.config.json',
         'project.private.config.json',
-        'sitemap.json'
+        'sitemap.json',
+        'utils'
       ].sort()
+    );
+    assert.equal(
+      fs.existsSync(path.join(extractDir, 'utils', 'config.js')),
+      true,
+      'utils/config.js must exist in extracted ZIP'
     );
   } finally {
     fs.rmSync(extractDir, { recursive: true, force: true });
@@ -272,3 +278,87 @@ test('6. Core business workflow verification: Douyin watermark removal & graysca
   assert.ok(jsFiles.includes('/api/jobs/douyin'));
   assert.ok(jsFiles.includes('/api/jobs/upload'));
 });
+
+test('7. Zero hardcoded localhost:3000 in generated Mini Program files and unified API_BASE_URL via utils/config.js', async () => {
+  const depthTemplate = TEMPLATES.find((t) => t.id === 'depth_video')!;
+  const defaultMeta = {
+    appName: '幻深 · 抖音/视频转灰度深度视频',
+    appId: 'touristappid',
+    version: '1.0.0',
+    themeColor: '#2563EB',
+    themeBg: '#F7F8FA',
+    author: 'AI Studio',
+    description: '视频转灰度相对深度视频 MP4'
+  };
+
+  const files = generateMiniProgramFiles(depthTemplate, defaultMeta);
+
+  // 1. Check no file in generated Mini Program contains localhost:3000 or 127.0.0.1:3000
+  for (const file of files) {
+    assert.equal(
+      file.content.includes('localhost:3000'),
+      false,
+      `Generated file ${file.path} must NOT contain hardcoded localhost:3000`
+    );
+    assert.equal(
+      file.content.includes('127.0.0.1:3000'),
+      false,
+      `Generated file ${file.path} must NOT contain hardcoded 127.0.0.1:3000`
+    );
+  }
+
+  // 2. Verify utils/config.js exists and exports API_BASE_URL, isApiConfigured, buildApiUrl
+  const configFile = files.find((f) => f.path === 'utils/config.js');
+  assert.ok(configFile, 'utils/config.js must be generated');
+  assert.ok(configFile.content.includes("const API_BASE_URL = 'https://YOUR_API_DOMAIN';"));
+  assert.ok(configFile.content.includes('isApiConfigured'));
+  assert.ok(configFile.content.includes('buildApiUrl'));
+
+  // 3. Verify all business pages import from ../../utils/config.js and use buildApiUrl(...)
+  const indexJs = files.find((f) => f.path === 'pages/index/index.js')!;
+  const processJs = files.find((f) => f.path === 'pages/process/process.js')!;
+  const playerJs = files.find((f) => f.path === 'pages/player/player.js')!;
+
+  assert.ok(indexJs.content.includes("require('../../utils/config.js')"));
+  assert.ok(processJs.content.includes("require('../../utils/config.js')"));
+  assert.ok(playerJs.content.includes("require('../../utils/config.js')"));
+
+  assert.ok(indexJs.content.includes("buildApiUrl('/api/health')"));
+  assert.ok(indexJs.content.includes("buildApiUrl('/api/parse')"));
+  assert.ok(indexJs.content.includes("buildApiUrl('/api/jobs/douyin')"));
+  assert.ok(indexJs.content.includes("buildApiUrl('/api/jobs/upload')"));
+  assert.ok(processJs.content.includes("buildApiUrl('/api/jobs/' + this.data.jobId)"));
+  assert.ok(playerJs.content.includes("buildApiUrl('/api/jobs/' + jobId + '/depth-video')"));
+  assert.ok(playerJs.content.includes("buildApiUrl('/api/jobs/' + this.data.jobId + '/download')"));
+});
+
+test('8. Custom apiBaseUrl configured in generator is written into utils/config.js and works at runtime', async () => {
+  const depthTemplate = TEMPLATES.find((t) => t.id === 'depth_video')!;
+  const customMeta = {
+    appName: '幻深 · 抖音/视频转灰度深度视频',
+    appId: 'touristappid',
+    version: '1.0.0',
+    themeColor: '#2563EB',
+    themeBg: '#F7F8FA',
+    author: 'AI Studio',
+    description: '视频转灰度相对深度视频 MP4',
+    apiBaseUrl: 'https://depth-api.mycloud.example.com/'
+  };
+
+  const files = generateMiniProgramFiles(depthTemplate, customMeta);
+  const zipBlob = await exportMiniProgramAsZip(files, customMeta);
+  const { extractDir } = await extractZipToTempDir(zipBlob);
+
+  try {
+    const configPath = path.join(extractDir, 'utils', 'config.js');
+    const configContent = fs.readFileSync(configPath, 'utf-8');
+    // Trailing slash should be normalized
+    assert.ok(
+      configContent.includes("const API_BASE_URL = 'https://depth-api.mycloud.example.com';"),
+      'Custom apiBaseUrl must be written into utils/config.js without trailing slash'
+    );
+  } finally {
+    fs.rmSync(extractDir, { recursive: true, force: true });
+  }
+});
+

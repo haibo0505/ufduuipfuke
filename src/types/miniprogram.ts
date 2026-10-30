@@ -8,6 +8,7 @@ export interface MiniProgramMeta {
   themeBg: string;
   author: string;
   description: string;
+  apiBaseUrl?: string;
 }
 
 export interface TabBarItem {
